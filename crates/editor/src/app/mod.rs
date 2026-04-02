@@ -1057,7 +1057,10 @@ impl EnyaApp {
             {
                 let has_user_projects =
                     enya_config::list_projects().iter().any(|p| p != "Tutorial");
-                if self.workspace.is_landing_page()
+                // Only auto-restore the last workspace when the user has explicitly
+                // selected "Last workspace" as their startup page preference.
+                if self.state.settings.startup_page
+                    == crate::ui::settings_screen::StartupPage::LastWorkspace
                     && has_user_projects
                     && !self.state.settings.recent_workspaces.is_empty()
                 {
@@ -1965,7 +1968,7 @@ impl eframe::App for EnyaApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     #[profiling::function]
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         profiling::finish_frame!();
 
         // Record frame time for editor metrics sparkline
@@ -2192,8 +2195,16 @@ impl eframe::App for EnyaApp {
         // IMPORTANT: Must be drawn BEFORE main content so CentralPanel knows to reserve space
         self.show_bottom_panel(ctx);
 
-        // Draw main content
+        // Draw main content. If we leave the Settings view during this update
+        // (e.g. user saved/closed settings), persist state immediately so
+        // changes survive process restarts.
+        let prev_ui = self.state.ui_state;
         self.show_main_content(ctx);
+        if prev_ui == UIState::Settings && self.state.ui_state != UIState::Settings {
+            if let Some(storage) = frame.storage_mut() {
+                eframe::set_value(storage, eframe::APP_KEY, &self.state);
+            }
+        }
 
         // Draw notifications (on top of everything) with effective theme
         self.notifications.set_theme(self.effective_theme());
